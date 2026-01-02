@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI or Real Game</title>
+<style>
+/* 🌈 Background & fonts */
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+  height: 100%;
+  background: linear-gradient(135deg, #ff9a9e, #fad0c4, #a1c4fd, #c2e9fb);
+  background-size: 400% 400%;
+  animation: gradientBG 15s ease infinite;
+}
+@keyframes gradientBG {
+  0% {background-position:0% 50%;}
+  50% {background-position:100% 50%;}
+  100% {background-position:0% 50%;}
+}
+h1 { font-size: 2.5em; margin-bottom: 20px; }
+button {
+  font-size: 1.5em;
+  padding: 20px 40px;
+  border-radius: 15px;
+  border: none;
+  cursor: pointer;
+  margin: 15px;
+  font-weight: bold;
+  transition: transform 0.2s;
+}
+button:hover { transform: scale(1.05); }
+.screen { display: none; padding: 20px; text-align: center; }
+.home-button { background: rgba(255,255,255,0.8); color:#333; }
+#card {
+  background:white;
+  max-width:400px;
+  margin:20px auto;
+  border-radius:12px;
+  box-shadow:0 4px 10px rgba(0,0,0,0.2);
+  padding:15px;
+  transition: transform 0.3s;
+}
+#card.correct { transform: scale(1.05); border:3px solid #4caf50; }
+#card.wrong { animation:shake 0.4s; border:3px solid #f44336; }
+@keyframes shake {
+  0% {transform:translateX(0);}
+  25% {transform:translateX(-6px);}
+  50% {transform:translateX(6px);}
+  75% {transform:translateX(-6px);}
+  100% {transform:translateX(0);}
+}
+img { width:100%; border-radius:10px; user-select:none; }
+#buttons { display:flex; justify-content:space-around; margin-top:15px; }
+.real { background:#4caf50; color:white; }
+.ai { background:#f44336; color:white; }
+#feedback { margin-top:12px; font-size:1.2em; min-height:30px; }
+#stats, #timer { font-size:1.2em; margin-top:10px; display:flex; justify-content:center; align-items:center; gap:15px; }
+#stats img { width:40px; height:40px; border-radius:50%; border:2px solid #fff; }
+#endScreen { display:none; font-size:1.5em; }
+.profile-container { display:flex; flex-wrap:wrap; justify-content:center; }
+.profile-container img { width:80px; height:80px; border-radius:50%; margin:10px; cursor:pointer; border:3px solid transparent; transition: transform 0.2s; }
+.profile-container img:hover { transform: scale(1.1); }
+.profile-container img.selected { border-color:#ffeb3b; }
+.owned-label { font-size:0.8em; color:#4caf50; margin-top:-10px; }
+</style>
+</head>
+<body>
+
+<!-- ===== Home Screen ===== -->
+<div id="home" class="screen" style="display:block;">
+  <h1>AI or Real?</h1>
+  <button class="home-button" onclick="showScreen('game')">PLAY</button><br>
+  <button class="home-button" onclick="showScreen('levels')">Levels</button><br>
+  <button class="home-button" onclick="showScreen('profiles')">Profiles</button><br>
+  <button class="home-button" onclick="alert('Coins: ' + coins)">Coins</button>
+</div>
+
+<!-- ===== Game Screen ===== -->
+<div id="game" class="screen">
+  <div id="timer"></div>
+  <div id="card">
+    <img id="image" />
+    <div id="buttons">
+      <button class="real" onclick="guess('real')">⬅ Real</button>
+      <button class="ai" onclick="guess('ai')">AI ➡</button>
+    </div>
+    <div id="feedback"></div>
+  </div>
+
+  <div id="stats">
+    🪙 Coins: <span id="coinsDisplay">0</span> |
+    ⭐ Level: <span id="levelDisplay">1</span> |
+    🔥 Streak: <span id="streakDisplay">0</span> |
+    <span>Profile:</span> <img id="currentProfile" src="" title="Selected Profile" />
+  </div>
+
+  <div id="endScreen">
+    🏆 You Win!<br><br>
+    Total Coins: <span id="finalCoins"></span><br><br>
+    <button onclick="resetGame()">Play Again</button>
+  </div>
+</div>
+
+<!-- ===== Levels Screen ===== -->
+<div id="levels" class="screen">
+  <h1>Levels</h1>
+  <div id="levelList"></div>
+  <button onclick="showScreen('home')">Back</button>
+</div>
+
+<!-- ===== Profiles Screen ===== -->
+<div id="profiles" class="screen">
+  <h1>Profiles</h1>
+  <div class="profile-container" id="profileList"></div>
+  <button onclick="showScreen('home')">Back</button>
+</div>
+
+<!-- ===== Sounds ===== -->
+<audio id="correctSound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+<audio id="wrongSound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+<audio id="levelSound" src="https://actions.google.com/sounds/v1/cartoon/positive_ding.ogg"></audio>
+
+<script>
+// ===== Screens =====
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.style.display='none');
+  document.getElementById(name).style.display='block';
+  if(name==='levels') renderLevels();
+  if(name==='profiles') renderProfiles();
+}
+
+// ===== Game Variables =====
+let coins = Number(localStorage.getItem("coins")) || 0;
+let level = Number(localStorage.getItem("level")) || 1;
+let streak = Number(localStorage.getItem("streak")) || 0;
+let selectedProfile = localStorage.getItem("selectedProfile") || null;
+let purchasedProfiles = JSON.parse(localStorage.getItem("purchasedProfiles")||'[]');
+let index = 0;
+let timeLeft, timer;
+const baseImagesPerLevel = 50;
+
+// Elements
+const imageEl = document.getElementById("image");
+const feedbackEl = document.getElementById("feedback");
+const coinsEl = document.getElementById("coinsDisplay");
+const levelEl = document.getElementById("levelDisplay");
+const streakEl = document.getElementById("streakDisplay");
+const timerEl = document.getElementById("timer");
+const cardEl = document.getElementById("card");
+const endScreen = document.getElementById("endScreen");
+const currentProfileEl = document.getElementById("currentProfile");
+
+// ===== Profiles =====
+const profiles = [
+  {name:"Red Star", img:"https://picsum.photos/seed/redstar/80/80", price:200, bonusTime:2},
+  {name:"Blue Star", img:"https://picsum.photos/seed/bluestar/80/80", price:400, bonusTime:3},
+  {name:"Green Star", img:"https://picsum.photos/seed/greenstar/80/80", price:600, bonusTime:4}
+];
+
+// ===== Images =====
+let images = []; // images pool
+
+function generateImagesForLevel(lvl){
+  const imgs=[];
+  for(let i=1;i<=baseImagesPerLevel;i++){
+    imgs.push({src:`https://picsum.photos/id/${lvl*100+i}/300/200`, answer:"real"});
+    imgs.push({src:`https://picsum.photos/seed/ai${lvl*100+i}/300/200`, answer:"ai"});
+  }
+  return imgs;
+}
+
+function buildImagePool(){
+  images=[];
+  for(let l=1;l<=level;l++){
+    images = images.concat(generateImagesForLevel(l));
+  }
+  shuffle(images);
+}
+
+function shuffle(array){
+  for(let i=array.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [array[i],array[j]]=[array[j],array[i]];
+  }
+}
+
+// ===== Functions =====
+function saveProgress(){
+  localStorage.setItem("coins", coins);
+  localStorage.setItem("level", level);
+  localStorage.setItem("streak", streak);
+  localStorage.setItem("selectedProfile", selectedProfile);
+  localStorage.setItem("purchasedProfiles", JSON.stringify(purchasedProfiles));
+}
+
+function startTimer(){
+  clearInterval(timer);
+  const bonus = selectedProfile ? profiles.find(p=>p.name===selectedProfile)?.bonusTime||0 : 0;
+  timeLeft = Math.max(3, 11 - level) + bonus;
+  timerEl.textContent = "⏱ Time: "+timeLeft;
+  timer = setInterval(()=>{
+    timeLeft--;
+    timerEl.textContent="⏱ Time: "+timeLeft;
+    if(timeLeft===0){
+      clearInterval(timer);
+      streak=0;
+      document.getElementById("wrongSound").play();
+      nextImage();
+    }
+  },1000);
+}
+
+function loadImage(){
+  cardEl.className="";
+  feedbackEl.textContent="";
+  if(images.length===0) buildImagePool();
+  if(index>=images.length) index=0;
+  imageEl.src=images[index].src;
+  startTimer();
+}
+
+function guess(choice){
+  clearInterval(timer);
+  if(images[index].answer===choice){
+    coins+=10;
+    streak++;
+    document.getElementById("correctSound").play();
+    cardEl.classList.add("correct");
+    if(streak%3===0) coins+=10;
+  } else {
+    streak=0;
+    document.getElementById("wrongSound").play();
+    cardEl.classList.add("wrong");
+  }
+  saveProgress();
+  updateStats();
+  setTimeout(nextImage, 500);
+}
+
+function nextImage(){
+  index=(index+1)%images.length;
+  loadImage();
+}
+
+function updateStats(){
+  coinsEl.textContent=coins;
+  levelEl.textContent=level;
+  streakEl.textContent=streak;
+  currentProfileEl.src=selectedProfile ? profiles.find(p=>p.name===selectedProfile).img : '';
+}
+
+// ===== Levels Screen =====
+function renderLevels(){
+  const levelList=document.getElementById("levelList");
+  levelList.innerHTML="";
+  for(let l=1;l<=5;l++){
+    const btn=document.createElement("button");
+    if(l<=level){
+      btn.textContent=`Level ${l} (Unlocked)`;
+      btn.disabled=true;
+    } else {
+      btn.textContent=`Level ${l} - Unlock for 1000 coins`;
+      btn.onclick=()=>{
+        if(coins>=1000){
+          coins-=1000;
+          level=l;
+          saveProgress();
+          buildImagePool();
+          updateStats();
+          alert("Level unlocked!");
+          renderLevels();
+        } else alert("Not enough coins!");
+      }
+    }
+    levelList.appendChild(btn);
+  }
+}
+
+// ===== Profiles Screen =====
+function renderProfiles(){
+  const container=document.getElementById("profileList");
+  container.innerHTML="";
+  profiles.forEach(p=>{
+    const wrapper = document.createElement("div");
+    wrapper.style.display="inline-block";
+    wrapper.style.textAlign="center";
+
+    const img=document.createElement("img");
+    img.src=p.img;
+    if(selectedProfile===p.name) img.classList.add("selected");
+
+    if(!purchasedProfiles.includes(p.name)){
+      img.title=`Buy ${p.name} for ${p.price} coins`;
+      img.onclick=()=>{
+        if(coins>=p.price){
+          coins-=p.price;
+          purchasedProfiles.push(p.name);
+          selectedProfile=p.name;
+          saveProgress();
+          updateStats();
+          renderProfiles();
+        } else alert("Not enough coins!");
+      }
+      const label = document.createElement("div");
+      label.textContent = `${p.price} coins`;
+      wrapper.appendChild(img);
+      wrapper.appendChild(label);
+    } else {
+      img.title=`Select ${p.name} (+${p.bonusTime}s bonus)`;
+      img.onclick=()=>{
+        selectedProfile=p.name;
+        saveProgress();
+        renderProfiles();
+        updateStats();
+      }
+      const label = document.createElement("div");
+      label.textContent = "Owned";
+      label.className="owned-label";
+      wrapper.appendChild(img);
+      wrapper.appendChild(label);
+    }
+    container.appendChild(wrapper);
+  });
+}
+
+// ===== Controls =====
+document.addEventListener("keydown",e=>{
+  if(e.key==="ArrowLeft") guess("real");
+  if(e.key==="ArrowRight") guess("ai");
+});
+
+let startX=0;
+imageEl.addEventListener("touchstart",e=>startX=e.touches[0].clientX);
+imageEl.addEventListener("touchend",e=>{
+  let endX=e.changedTouches[0].clientX;
+  if(endX-startX>50) guess("ai");
+  if(startX-endX>50) guess("real");
+});
+
+// ===== Initialize =====
+updateStats();
+buildImagePool();
+loadImage();
+</script>
+</body>
+</html>
